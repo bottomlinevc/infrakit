@@ -28,8 +28,6 @@ jobs:
           node-version: "lts/*"
           registry-url: "https://npm.pkg.github.com"
           scope: "@${{ env.ORG }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,8 +55,6 @@ jobs:
           node-version: "lts/*"
           registry-url: "https://npm.pkg.github.com"
           scope: "@${{ env.ORG }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the Action token to publish the package to GitHub Packages
 
       - name: Install dependencies
         run: npm clean-install

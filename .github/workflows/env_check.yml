@@ -28,8 +28,6 @@ jobs:
           node-version: "lts/*"
           registry-url: "https://npm.pkg.github.com"
           scope: "@${{ env.ORG }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
 
       - name: Configure AWS Credentials
         if: ${{ vars.AWS_ACCESS_KEY_ID && secrets.AWS_SECRET_ACCESS_KEY && vars.AWS_REGION }}
