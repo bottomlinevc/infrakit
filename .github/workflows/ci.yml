@@ -1,0 +1,56 @@
+# PUBLIC
+# This is used to run the tests and send the metrics to Datadog.
+
+name: Tests
+on:
+  workflow_call:
+
+env:
+  ORG: ${{ github.repository_owner }}
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Logging the Start Timestamp of CI for Datadog Metrics
+        run: |
+          echo "CI_START_TIMESTAMP=`date +%s`" >> $GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@${{ env.ORG }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Run tests
+        run: |
+          npm run test
+
+      - name: Run codacy-coverage-reporter
+        if: ${{ secrets.CODACY_API_TOKEN }}
+        uses: codacy/codacy-coverage-reporter-action@v1
+        with:
+          api-token: ${{ secrets.CODACY_API_TOKEN }}
+
+      - name: Dispatching CI End Datadog Events
+        if: ${{ env.DATADOG_HOST && secrets.DATADOG_API_KEY }}
+        env:
+          DATADOG_HOST: ${{ vars.DATADOG_HOST }}
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DATADOG_TAGS: "repository:${{ github.repository }}"
+        run: |
+          pip install datadog
+          dog --api_host "${DATADOG_HOST}" --api-key "${DATADOG_API_KEY}" --application-key "" metric post --type gauge --no_host --tags "${DATADOG_TAGS}" "infra.tests.runtime" $(bc <<< "`date +%s` - ${CI_START_TIMESTAMP}")

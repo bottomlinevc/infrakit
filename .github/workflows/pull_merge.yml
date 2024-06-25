@@ -1,0 +1,159 @@
+# PUBLIC
+# Runs on merge of Pull Request
+# Provisions the infrastructure using Pulumi and sends notifications to Slack
+
+name: Merge
+on:
+  workflow_call:
+
+env:
+  ORG: ${{ github.repository_owner }}
+  SLACK_PREFIX: ${{ vars.SLACK_PREFIX || github.repository_owner }}
+
+jobs:
+  update:
+    name: Update
+    runs-on: ubuntu-latest
+    # Only run when pull request is merged and not merely closed
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    environment: ${{ startsWith(github.ref_name, 'production/') && 'production' || startsWith(github.ref_name, 'sandbox/') && 'sandbox' }}
+    timeout-minutes: 10
+    env:
+      DeployEnv: ${{ startsWith(github.ref_name, 'production/') && 'PRODUCTION' || startsWith(github.ref_name, 'sandbox/') && 'SANDBOX' }}
+
+    steps:
+      - name: Slack Notification for Pulumi Up Request Init
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: "${{ secrets.INFRA_SLACK_WEBHOOK_URL }}"
+          SLACK_CHANNEL: "${{ env.SLACK_PREFIX}}-infra-ci"
+          SLACK_COLOR: "good"
+          SLACK_TITLE: ":crossed_fingers: :rotating_light: :rotating_light: :crossed_fingers: New release for `${{ github.repository }}`. Running `pulumi up` in `${{ env.DeployEnv }}`."
+          SLACK_MESSAGE: "${{ github.event.pull_request.title }}\n${{ github.event.pull_request.body }}\n${{ github.event.pull_request.html_url }}"
+          SLACK_FOOTER: "${{ github.event.pull_request.diff_url }}"
+          SLACK_MSG_AUTHOR: "${{ github.event.pull_request.user.name }}"
+          MSG_MINIMAL: true
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@${{ env.ORG }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
+
+      - name: Configure AWS Credentials
+        if: ${{ vars.AWS_ACCESS_KEY_ID && secrets.AWS_SECRET_ACCESS_KEY && vars.AWS_REGION }}
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
+          aws-region: ${{ vars.AWS_REGION }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - run: npm install && npm run build
+
+      - uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(secrets) }}
+
+      - uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(vars) }}
+
+      - name: Applying Pulumi Update
+        id: pulumi
+        uses: pulumi/actions@v4
+        continue-on-error: true
+        with:
+          command: up
+          comment-on-summary: true
+          stack-name: ${{ env.ORG }}/${{ (env.DeployEnv == 'PRODUCTION') && 'prod' || (env.DeployEnv == 'SANDBOX') && 'sandbox' }}
+          upsert: true
+          # Github prevents environment variables with GITHUB_ prefix, so we have to pass values as a config-map
+          config-map: |
+            github:owner:
+              value: ${{ env.ORG }}
+              secret: false
+            github:token:
+              value: ${{ secrets.GH_TOKEN }}
+              secret: true
+
+      - uses: actions/github-script@v7
+        id: slackmsg
+        with:
+          result-encoding: string
+          script: |
+            const pulumiOutput = `${{join(steps.pulumi.outputs.*, '\n')}}`;
+            const lines = pulumiOutput.split('\n');
+            let relevantLines = [];
+            let captureResources = false;
+            let lineCount = 0, captureCount = 0;
+            for (let line of lines) {
+              if (line.trim() == "") {
+                lineCount++;
+                continue;
+              }
+              line = line.trim();
+              if (line.startsWith("Resources:")) captureResources = true;
+              if (captureResources || [0, 1, 2].includes(lineCount) || line.startsWith('+') || line.startsWith('-') || line.startsWith('~')) {
+                relevantLines.push(line);
+                if (captureResources) captureCount++;
+              }
+              if (captureResources && (line.includes("unchanged") || line.includes("changes")))  captureResources = false;
+              lineCount++;
+            }
+            const condensedOutput = relevantLines.join('\n');
+            return condensedOutput;
+
+      - name: Slack Notification for Pulumi Up Failure
+        uses: rtCamp/action-slack-notify@v2
+        if: steps.pulumi.outcome == 'failure'
+        env:
+          SLACK_WEBHOOK: "${{ secrets.INFRA_SLACK_WEBHOOK_URL }}"
+          SLACK_CHANNEL: "${{ env.SLACK_PREFIX }}-infra-ci"
+          SLACK_COLOR: "danger"
+          SLACK_TITLE: ":rotating_light: :warning: `pulumi up` failed `${{ github.repository }}` in `${{ env.DeployEnv }}`."
+          SLACK_MESSAGE: "${{ github.event.pull_request.title }}\nSee Github Action output for more information."
+          SLACK_FOOTER: "${{ github.event.pull_request.diff_url }}"
+          SLACK_MSG_AUTHOR: "${{ github.event.pull_request.user.name }}"
+          MSG_MINIMAL: true
+
+      - name: Slack Notification for Pulumi Up Success
+        uses: rtCamp/action-slack-notify@v2
+        if: steps.pulumi.outcome == 'success'
+        env:
+          SLACK_WEBHOOK: "${{ secrets.INFRA_SLACK_WEBHOOK_URL }}"
+          SLACK_CHANNEL: "${{ env.SLACK_PREFIX }}-infra-ci"
+          SLACK_COLOR: "good"
+          SLACK_TITLE: ":rocket: :dizzy: :100: :sparkles: `pulumi up` successful `${{ github.repository }}` (`${{ env.DeployEnv }}`)"
+          SLACK_MESSAGE: "${{ github.event.pull_request.title }}\n```${{join(steps.slackmsg.outputs.*, '\n')}}```"
+          SLACK_FOOTER: "${{ github.event.pull_request.diff_url }}"
+          SLACK_MSG_AUTHOR: "${{ github.event.pull_request.user.name }}"
+          MSG_MINIMAL: true
+
+      - name: Dispatching Datadog Events and Metrics
+        if: ${{ vars.DATADOG_HOST && secrets.DATADOG_API_KEY }}
+        env:
+          DATADOG_HOST: ${{ vars.DATADOG_HOST }}
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DATADOG_TAGS: "repository:${{ github.repository }}"
+        run: |
+          pip install datadog
+
+          cat <<- EOF > ${{ runner.temp }}/pulumi.txt
+          ${{join(steps.pulumi.outputs.*, '\n')}}
+          EOF
+
+          if [[ '${{ steps.pulumi.outcome }}' == 'success' ]]; then
+            cat ${{ runner.temp }}/pulumi.txt | dog --api_host "${DATADOG_HOST}" --api-key "${DATADOG_API_KEY}" --application-key "" event post --alert_type success --type "pulumi" --no_host --tags "${DATADOG_TAGS}" "infra.pulumi.up"
+          elif [[ '${{ steps.pulumi.outcome }}' == 'failure' ]]; then
+            cat ${{ runner.temp }}/pulumi.txt | dog --api_host "${DATADOG_HOST}" --api-key "${DATADOG_API_KEY}" --application-key "" event post --alert_type error --type "pulumi" --no_host --tags "${DATADOG_TAGS}" "infra.pulumi.up"
+          fi
+
+          dog --api_host ${DATADOG_HOST} --api-key "${DATADOG_API_KEY}" --application-key "" metric post --type count --no_host --tags "${DATADOG_TAGS}" "infra.pulumi.up" 1
+
+      - name: Pulumi Up Failed
+        if: steps.pulumi.outcome == 'failure'
+        run: exit 1

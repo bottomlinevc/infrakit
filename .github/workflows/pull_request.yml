@@ -1,0 +1,63 @@
+# PUBLIC
+# Runs on pull request
+# Runs Pulumi preview for the pull request, comments on the PR with changes.
+
+name: PullRequest
+on:
+  workflow_call:
+
+env:
+  ORG: ${{ github.repository_owner }}
+  SLACK_PREFIX: ${{ vars.SLACK_PREFIX || github.repository_owner }}
+
+jobs:
+  preview:
+    name: Preview
+    runs-on: ubuntu-latest
+    environment: ${{ (github.base_ref == 'main' && vars.REPO_ENV_COMPARISON) || startsWith(github.base_ref, 'sandbox/') && 'sandbox' || startsWith(github.base_ref, 'production/') && 'production' }}
+    timeout-minutes: 10
+    env:
+      PreviewEnv: ${{ (github.base_ref == 'main' && vars.REPO_ENV_COMPARISON) || startsWith(github.base_ref, 'sandbox/') && 'sandbox' || startsWith(github.base_ref, 'production/') && 'production' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@${{ env.ORG }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
+
+      - name: Configure AWS Credentials
+        if: ${{ vars.AWS_ACCESS_KEY_ID && secrets.AWS_SECRET_ACCESS_KEY && vars.AWS_REGION }}
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
+          aws-region: ${{ vars.AWS_REGION }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - run: npm install && npm run build
+
+      - uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(secrets) }}
+
+      - uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(vars) }}
+
+      - uses: pulumi/actions@v4
+        with:
+          command: preview
+          stack-name: ${{ env.ORG }}/${{ (env.PreviewEnv == 'sandbox') && 'sandbox' || (env.PreviewEnv == 'production') && 'prod' }}
+          upsert: true
+          # Github prevents environment variables with GITHUB_ prefix, so we have to pass values as a config-map
+          config-map: |
+            github:owner:
+              value: ${{ env.ORG }}
+              secret: false
+            github:token:
+              value: ${{ secrets.GH_TOKEN }}
+              secret: true

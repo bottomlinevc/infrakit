@@ -1,0 +1,28 @@
+# PUBLIC
+# Ensure the source branch of a pull request to production/* and sandbox/* is the main branch
+
+name: SourceBranchCheck
+
+on:
+  workflow_call:
+
+jobs:
+  check-source:
+    name: CheckSource
+    runs-on: ubuntu-latest
+    steps:
+      - name: Source Branch
+        id: check
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event.pull_request.head.ref }}" != "main" ]; then
+            echo "Pull requests to production/* or sandbox/* must originate from the main branch."
+            exit 1
+          fi
+
+      - name: Comment on Pull Request
+        if: steps.check.outcome == 'failure'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: |
+            Pull requests to `production/*` or `sandbox/*` must originate from the `main` branch.

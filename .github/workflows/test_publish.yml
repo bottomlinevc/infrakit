@@ -1,0 +1,104 @@
+# PRIVATE
+# For use with infrakit only
+# This file is used to test and publish the package to GitHub Packages
+
+name: Tests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read # for checkout
+
+env:
+  ORG: ${{ github.repository_owner }}
+  SLACK_PREFIX: ${{ vars.SLACK_PREFIX || github.repository_owner }}
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@${{ env.ORG }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Run tests
+        run: |
+          npm run test
+
+  publish:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Setup .npmrc file to publish to GitHub Packages
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@${{ env.ORG }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the Action token to publish the package to GitHub Packages
+
+      - name: Install dependencies
+        run: npm clean-install
+
+      - name: Build
+        run: npm run build
+
+      - name: Semantic Release
+        id: semanticrelease
+        # Use the Action token to publish the package to GitHub Packages
+        # We don't need to create a separate token to publish packages as they
+        # are being published in the same repo where this action will run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx semantic-release
+
+      - name: Slack Notification for Semantic Release Failure
+        uses: rtCamp/action-slack-notify@v2
+        if: steps.semanticrelease.outcome == 'failure'
+        env:
+          SLACK_WEBHOOK: "${{ secrets.INFRA_SLACK_WEBHOOK_URL }}"
+          SLACK_CHANNEL: "${{ env.SLACK_PREFIX }}-infra-ci"
+          SLACK_COLOR: "danger"
+          SLACK_TITLE: ":rotating_light: :warning: Semantic release failed `${{ github.repository }}`"
+          SLACK_MESSAGE: " "
+          SLACK_FOOTER: " "
+          SLACK_MSG_AUTHOR: "${{ github.actor }}"
+          MSG_MINIMAL: true
+
+      - name: Slack Notification for Semantic Release Success
+        uses: rtCamp/action-slack-notify@v2
+        if: steps.semanticrelease.outcome == 'success'
+        env:
+          SLACK_WEBHOOK: "${{ secrets.INFRA_SLACK_WEBHOOK_URL }}"
+          SLACK_CHANNEL: "${{ env.SLACK_PREFIX }}-infra-ci"
+          SLACK_COLOR: "good"
+          SLACK_TITLE: ":rocket: :sparkles: Semantic Release successful `${{ github.repository }}`"
+          SLACK_MESSAGE: "```${{join(steps.semanticrelease.outputs.*, '\n')}}```"
+          SLACK_MSG_AUTHOR: "${{ github.actor }}"
+          SLACK_FOOTER: ""
+          MSG_MINIMAL: true

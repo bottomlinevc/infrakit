@@ -1,0 +1,148 @@
+# PUBLIC
+# To be run on schedule.
+# Checks whether main has unreleased changes for production and sandbox environments.
+
+name: EnvUptodateCheck
+
+on:
+  workflow_call:
+
+env:
+  ORG: ${{ github.repository_owner }}
+  SLACK_PREFIX: ${{ vars.SLACK_PREFIX || github.repository_owner }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ${{fromJson(vars.REPO_ENVIRONMENTS)}}
+    timeout-minutes: 10
+    environment: ${{ matrix.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "lts/*"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@${{ env.ORG }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
+
+      - name: Configure AWS Credentials
+        if: ${{ vars.AWS_ACCESS_KEY_ID && secrets.AWS_SECRET_ACCESS_KEY && vars.AWS_REGION }}
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
+          aws-region: ${{ vars.AWS_REGION }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - run: npm install && npm run build
+
+      - uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(secrets) }}
+
+      - uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(vars) }}
+
+      - name: Running Pulumi Preview Check
+        id: pulumicheck
+        uses: pulumi/actions@v4
+        continue-on-error: true
+        with:
+          command: preview
+          expect-no-changes: true
+          comment-on-summary: true
+          stack-name: ${{ env.ORG }}/${{ (matrix.environment == 'production') && 'prod' || (matrix.environment == 'sandbox') && 'sandbox' }}
+          # Github prevents environment variables with GITHUB_ prefix, so we have to pass values as a config-map
+          config-map: |
+            github:owner:
+              value: ${{ env.ORG }}
+              secret: false
+            github:token:
+              value: ${{ secrets.GH_TOKEN }}
+              secret: true
+
+      # Run it again if we have changes as preview doesn't return changes to output on failures
+      - name: Running Pulumi Preview
+        id: pulumi
+        if: steps.pulumicheck.outcome == 'failure'
+        uses: pulumi/actions@v4
+        continue-on-error: true
+        with:
+          command: preview
+          comment-on-summary: true
+          stack-name: ${{ env.ORG }}/${{ (matrix.environment == 'production') && 'prod' || (matrix.environment == 'sandbox') && 'sandbox' }}
+          # Github prevents environment variables with GITHUB_ prefix, so we have to pass values as a config-map
+          config-map: |
+            github:owner:
+              value: ${{ env.ORG }}
+              secret: false
+            github:token:
+              value: ${{ secrets.GH_TOKEN }}
+              secret: true
+
+      - uses: actions/github-script@v7
+        id: slackmsg
+        with:
+          result-encoding: string
+          script: |
+            const pulumiOutput = `${{join(steps.pulumi.outputs.*, '\n')}}`;
+            const lines = pulumiOutput.split('\n');
+            let relevantLines = [];
+            let captureResources = false;
+            let lineCount = 0, captureCount = 0;
+            for (let line of lines) {
+              if (line.trim() == "") {
+                lineCount++;
+                continue;
+              }
+              line = line.trim();
+              if (line.startsWith("Resources:")) captureResources = true;
+              if (captureResources || [0, 1, 2].includes(lineCount) || line.startsWith('+') || line.startsWith('-') || line.startsWith('~')) {
+                relevantLines.push(line);
+                if (captureResources) captureCount++;
+              }
+              if (captureResources && (line.includes("unchanged") || line.includes("changes")))  captureResources = false;
+              lineCount++;
+            }
+            const condensedOutput = relevantLines.join('\n');
+            return condensedOutput;
+
+      - name: Slack Notification when Pulumi Preview has Changes
+        uses: rtCamp/action-slack-notify@v2
+        if: steps.pulumicheck.outcome == 'failure'
+        env:
+          SLACK_WEBHOOK: "${{ secrets.INFRA_SLACK_WEBHOOK_URL }}"
+          SLACK_CHANNEL: "${{ env.SLACK_PREFIX }}-infra-ci"
+          SLACK_COLOR: "warning"
+          SLACK_TITLE: ":rotating_light: :rewind: `main` has unreleased changes for `${{ matrix.environment }}` in `${{ github.repository }}`"
+          SLACK_MESSAGE: "It is important to keep `${{ matrix.environment }}` in sync with `main`. Output of pending changes through `pulumi preview` against `${{ matrix.environment }}`:\n```${{join(steps.slackmsg.outputs.*, '\n')}}```"
+          SLACK_FOOTER: ""
+          SLACK_MSG_AUTHOR: "${{ github.actor }}"
+          MSG_MINIMAL: true
+
+      - name: Dispatching Datadog Events and Metrics
+        if: ${{ vars.DATADOG_HOST && secrets.DATADOG_API_KEY }}
+        env:
+          DATADOG_HOST: ${{ vars.DATADOG_HOST }}
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DATADOG_TAGS: "repository:${{ github.repository }}"
+        run: |
+          pip install datadog
+
+          cat <<- EOF > ${{ runner.temp }}/pulumi.txt
+          ${{join(steps.pulumi.outputs.*, '\n')}}
+          EOF
+
+          if [[ '${{ steps.pulumi.outcome }}' == 'success' ]]; then
+            cat ${{ runner.temp }}/pulumi.txt | dog --api_host "${DATADOG_HOST}" --api-key "${DATADOG_API_KEY}" --application-key "" event post --alert_type success --type "pulumi" --no_host --tags "${DATADOG_TAGS}" "infra.pulumi.release_check"
+          elif [[ '${{ steps.pulumi.outcome }}' == 'failure' ]]; then
+            cat ${{ runner.temp }}/pulumi.txt | dog --api_host ${DATADOG_HOST} --api-key "${DATADOG_API_KEY}" --application-key "" event post --alert_type error --type "pulumi" --no_host --tags "${DATADOG_TAGS}" "infra.pulumi.release_check"
+          fi
+
+          dog --api_host "${DATADOG_HOST}" --api-key "${DATADOG_API_KEY}" --application-key "" metric post --type count --no_host --tags "${DATADOG_TAGS}" "infra.pulumi.release_check" 1
