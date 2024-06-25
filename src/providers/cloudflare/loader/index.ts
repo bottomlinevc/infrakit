@@ -31,7 +31,7 @@ export type DNSRecordCfg = {
   proxied?: boolean;
 };
 
-export function getZoneCfg(cfgFile: string): CloudflareCfg {
+export function getCloudflareCfg(cfgFile: string): CloudflareCfg {
   const file = readFileSync(cfgFile, "utf8");
   return parse(file) as CloudflareCfg;
 }
