@@ -38,13 +38,13 @@ jobs:
           npm run test
 
       - name: Run codacy-coverage-reporter
-        if: ${{ secrets.CODACY_API_TOKEN }}
+        if: ${{ vars.CODACY_ENABLED }}
         uses: codacy/codacy-coverage-reporter-action@v1
         with:
           api-token: ${{ secrets.CODACY_API_TOKEN }}
 
       - name: Dispatching CI End Datadog Events
-        if: ${{ env.DATADOG_HOST && secrets.DATADOG_API_KEY }}
+        if: ${{ vars.DATADOG_HOST }}
         env:
           DATADOG_HOST: ${{ vars.DATADOG_HOST }}
           DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
