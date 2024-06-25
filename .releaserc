@@ -1,6 +1,6 @@
 {
   "branches": ["main"],
-  "pkgRoot": "./dist/",
+  "pkgRoot": "./dist/src/",
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
