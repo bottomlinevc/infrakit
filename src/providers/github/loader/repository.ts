@@ -50,11 +50,15 @@ export class RepoLoader {
     githubOrg: string,
     repositoriesCfg: RepositoryCfg[],
     teamsMap: TeamMap,
-    defaultTeams: string[],
+    defaultTeams?: string[],
   ) {
     this.githubOrg = githubOrg;
 
     // Merge the incoming default teams with the one in our config for provider
+    if (defaultTeams === undefined) {
+      defaultTeams = [];
+    }
+
     const finalDefaultTeams = [...DEFAULT_TEAMS, ...defaultTeams];
     // Ensure the default teams were created and supplied in the Team map
     finalDefaultTeams.forEach((team) => {

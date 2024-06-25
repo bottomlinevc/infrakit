@@ -1,6 +1,3 @@
-export const INFRA_REPO = "infrastructure";
-export const DEFAULT_REPOSITORIES = [INFRA_REPO];
-
 export const TEAM_ADMIN = "admin";
 export const TEAM_INFRASTRUCTURE = "infrastructure";
 

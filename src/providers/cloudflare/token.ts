@@ -15,18 +15,20 @@ import {
   PERM_PAGES_WRITE,
   PERM_USER_MEMBERSHIPS_READ,
 } from "./permission";
-import { config } from "./config";
 
 // Create a token with custom permissions
 export function newToken(
-  config: config,
+  org: string,
+  accountId: string,
+  userId: string,
+  tokenHash: string,
   name: string,
   zones: cf.Zone[],
   zonePermissions: Promise<string>[],
   accountPermissions?: Promise<string>[],
   userPermissions?: Promise<string>[],
 ): cf.ApiToken {
-  const tokenName = `${config.org}-${name}-${config.tokenHash}`;
+  const tokenName = `${org}-${name}-${tokenHash}`;
 
   const zoneIds = zones.map((zone) => zone.id);
 
@@ -49,7 +51,7 @@ export function newToken(
     policies.push({
       effect: "allow",
       permissionGroups: accountPermissions,
-      resources: pulumi.all([config.accountId]).apply(([accountId]) => {
+      resources: pulumi.all([accountId]).apply(([accountId]) => {
         return {
           [`com.cloudflare.api.account.${accountId}`]: "*",
         };
@@ -61,7 +63,7 @@ export function newToken(
     policies.push({
       effect: "allow",
       permissionGroups: userPermissions,
-      resources: pulumi.all([config.userId]).apply(([userId]) => {
+      resources: pulumi.all([userId]).apply(([userId]) => {
         return {
           [`com.cloudflare.api.user.${userId}`]: "*",
         };
@@ -77,12 +79,19 @@ export function newToken(
 
 // Create a token for creation of workers, routes, KV etc.
 export function newWorkerToken(
-  config: config,
+  org: string,
+  accountId: string,
+  userId: string,
+  tokenHash: string,
+
   name: string,
   zones: cf.Zone[],
 ): cf.ApiToken {
   return newToken(
-    config,
+    org,
+    accountId,
+    userId,
+    tokenHash,
     name,
     zones,
     [
@@ -104,12 +113,18 @@ export function newWorkerToken(
 
 // Create a higher privileged token for creation of workers along with pages and pagerules
 export function newWorkerPagesToken(
-  config: config,
+  org: string,
+  accountId: string,
+  userId: string,
+  tokenHash: string,
   name: string,
   zones: cf.Zone[],
 ): cf.ApiToken {
   return newToken(
-    config,
+    org,
+    accountId,
+    userId,
+    tokenHash,
     name,
     zones,
     [
@@ -137,12 +152,18 @@ export function newWorkerPagesToken(
 
 // Create a token for deployment of workers
 export function newWorkerDeploymentToken(
-  config: config,
+  org: string,
+  accountId: string,
+  userId: string,
+  tokenHash: string,
   name: string,
   zones: cf.Zone[],
 ): cf.ApiToken {
   return newToken(
-    config,
+    org,
+    accountId,
+    userId,
+    tokenHash,
     name,
     zones,
     [PERM_WORKERS_ROUTES_READ],
@@ -153,9 +174,16 @@ export function newWorkerDeploymentToken(
 
 // Create a token for DNS management
 export function newDNSToken(
-  config: config,
+  org: string,
+  accountId: string,
+  userId: string,
+  tokenHash: string,
+
   name: string,
   zones: cf.Zone[],
 ): cf.ApiToken {
-  return newToken(config, name, zones, [PERM_DNS_READ, PERM_DNS_WRITE]);
+  return newToken(org, accountId, userId, tokenHash, name, zones, [
+    PERM_DNS_READ,
+    PERM_DNS_WRITE,
+  ]);
 }
