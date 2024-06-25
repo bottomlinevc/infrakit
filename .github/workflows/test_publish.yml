@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "lts/*"
           registry-url: "https://npm.pkg.github.com"
-          scope: "@${{ env.ORG }}"
+          scope: "@bottomlinevc"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
         with:
           node-version: "lts/*"
           registry-url: "https://npm.pkg.github.com"
-          scope: "@${{ env.ORG }}"
+          scope: "@bottomlinevc"
 
       - name: Install dependencies
         run: npm clean-install
