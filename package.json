@@ -28,7 +28,7 @@
     "format": "prettier --write '**/*.{js,mjs,cjs,jsx,ts,tsx,yml,graphql,css,scss,json,md}'",
     "test": "jest --passWithNoTests --updateSnapshot",
     "test:watch": "jest --watch",
-    "build": "tsc -p . && cp package.json dist/src && cp LICENSE dist/src && cp README.md dist/src && cp tsconfig.json dist/src",
+    "build": "tsc -p . && cp package.json dist/ && cp LICENSE dist/ && cp README.md dist/ && cp tsconfig.json dist/",
     "clean": "rm -rf dist",
     "build:clean": "npm run clean && npm run build"
   },
