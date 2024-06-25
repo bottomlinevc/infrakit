@@ -3,7 +3,6 @@ import { readFileSync } from "fs";
 
 export type AccountCfg = {
   accountId: string;
-  userId: string;
 };
 
 export type ZoneCfg = {

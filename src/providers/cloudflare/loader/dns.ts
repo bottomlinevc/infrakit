@@ -35,17 +35,23 @@ export class DNSLoader {
     recordsCfg: DNSRecordCfg[],
   ): cf.Record[] {
     const records = recordsCfg.map((recordCfg) => {
-      return new cf.Record(
-        recordCfg.name,
-        {
-          zoneId: zoneId,
-          name: recordCfg.name,
-          type: recordCfg.type,
-          value: recordCfg.value,
-          ttl: recordCfg.ttl,
-        },
-        { protect: true },
-      );
+      const recordProps: cf.RecordArgs = {
+        zoneId: zoneId,
+        name: recordCfg.name,
+        type: recordCfg.type,
+        value: recordCfg.value,
+        ttl: recordCfg.ttl,
+      };
+
+      if (recordCfg.proxied) {
+        recordProps["proxied"] = true;
+      }
+
+      if (recordCfg.priority) {
+        recordProps["priority"] = recordCfg.priority;
+      }
+
+      return new cf.Record(recordCfg.name, recordProps, { protect: true });
     });
 
     return records;
