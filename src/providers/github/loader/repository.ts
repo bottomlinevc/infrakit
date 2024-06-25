@@ -163,6 +163,13 @@ export class RepoLoader {
     }
   }
 
+  public addEnvDeploymentBranchPatterns(
+    env: string,
+    branchPatterns: string[],
+  ): void {
+    this.repoEnvDeploymentBranches.set(env, branchPatterns);
+  }
+
   public load(): RepoMap {
     const repoMap: RepoMap = new Map<string, Repo>();
 
