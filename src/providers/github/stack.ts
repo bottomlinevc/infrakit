@@ -1,7 +1,16 @@
 import * as pulumi from "@pulumi/pulumi";
 import { TeamMap, Team } from "./team";
-import { GH_TEAMS } from "./types";
 import { DEFAULT_TEAMS } from "./config";
+
+export type GH_TEAM = {
+  id: pulumi.Output<string> | string;
+  slug: pulumi.Output<string> | string;
+  isDefault: boolean;
+};
+
+export type GH_TEAMS = {
+  [teamName: string]: GH_TEAM;
+};
 
 // Export the teams for use in other projects
 export function exportTeams(teams: TeamMap): GH_TEAMS {
