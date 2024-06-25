@@ -94,7 +94,7 @@ jobs:
           SLACK_CHANNEL: "${{ env.SLACK_PREFIX }}-infra-ci"
           SLACK_COLOR: "good"
           SLACK_TITLE: ":rocket: :sparkles: Semantic Release successful `${{ github.repository }}`"
-          SLACK_MESSAGE: "```${{join(steps.semanticrelease.outputs.*, '\n')}}```"
+          SLACK_MESSAGE: " "
           SLACK_MSG_AUTHOR: "${{ github.actor }}"
           SLACK_FOOTER: ""
           MSG_MINIMAL: true
