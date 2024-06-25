@@ -24,6 +24,8 @@ jobs:
         with:
           node-version: "lts/*"
           registry-url: "https://npm.pkg.github.com"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Checkout repository
         uses: actions/checkout@v4
