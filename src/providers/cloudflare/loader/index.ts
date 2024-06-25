@@ -16,7 +16,27 @@ export type CloudflareCfg = {
   zones: ZoneCfg[];
 };
 
-export function getCfg(cfgFile: string): CloudflareCfg {
+export type DNSCfg = {
+  zone: string;
+  records: DNSRecordCfg[];
+};
+
+export type DNSRecordCfg = {
+  label: string;
+  name: string;
+  type: string;
+  ttl: number;
+  value: string;
+  priority?: number;
+  proxied?: boolean;
+};
+
+export function getZoneCfg(cfgFile: string): CloudflareCfg {
   const file = readFileSync(cfgFile, "utf8");
   return parse(file) as CloudflareCfg;
+}
+
+export function getDNSCfg(cfgFile: string): DNSCfg[] {
+  const file = readFileSync(cfgFile, "utf8");
+  return parse(file) as DNSCfg[];
 }
